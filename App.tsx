@@ -31,6 +31,9 @@ import AIChat from './components/AIChat.tsx';
 import { db } from './db.ts';
 
 const App: React.FC = () => {
+  const apiKey = import.meta.env.VITE_API_KEY;
+console.log("API KEY:", apiKey);
+
   const [activeCategory, setActiveCategory] = useState<Category | 'map_explore' | 'ai_chat' | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
