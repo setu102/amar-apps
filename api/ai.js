@@ -43,11 +43,35 @@ const parseRequestBody = (req) => {
   return {};
 };
 
+const normalizeContents = (contents) => {
+  if (!contents) {
+    return null;
+  }
+
+  if (typeof contents === 'string') {
+    return [{ role: 'user', parts: [{ text: contents }] }];
+  }
+
+  if (Array.isArray(contents)) {
+    return contents;
+  }
+
+  if (typeof contents === 'object') {
+    return [contents];
+  }
+
+  return null;
+};
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
+
+  console.info('[api/ai] request', {
+    method: req.method
+  });
 
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed.' });
@@ -66,22 +90,32 @@ export default async function handler(req, res) {
   try {
     body = await parseRequestBody(req);
   } catch (error) {
+    console.error('[api/ai] body_parse_error', { message: error?.message || 'unknown' });
     res.status(400).json({ error: 'Invalid JSON payload.' });
     return;
   }
 
-  const { contents, systemInstruction, tools, responseSchema, responseMimeType } = body || {};
+  console.info('[api/ai] body', body);
 
-  if (!contents || !Array.isArray(contents)) {
+  const { contents, systemInstruction, tools, responseSchema, responseMimeType } = body || {};
+  const normalizedContents = normalizeContents(contents);
+
+  console.info('[api/ai] contents_status', {
+    hasContents: Boolean(contents),
+    isArray: Array.isArray(contents)
+  });
+
+  if (!normalizedContents) {
     res.status(400).json({ error: 'Invalid request: contents array is required.' });
     return;
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey });
+    console.info('[api/ai] gemini_request_start', { model });
     const response = await ai.models.generateContent({
       model,
-      contents,
+      contents: normalizedContents,
       config: {
         systemInstruction: systemInstruction || defaultSystemInstruction,
         tools: tools || [{ googleSearch: {} }],
@@ -95,7 +129,9 @@ export default async function handler(req, res) {
       text: response.text || '',
       groundingMetadata: response.candidates?.[0]?.groundingMetadata || null
     });
+    console.info('[api/ai] gemini_request_success');
   } catch (error) {
+    console.error('[api/ai] gemini_request_error', { message: error?.message || 'unknown' });
     res.status(500).json({
       error: 'Gemini API call failed.',
       details: error?.message || null
