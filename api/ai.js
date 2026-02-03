@@ -1,5 +1,5 @@
 export const config = {
-  runtime: 'nodejs'
+  runtime: 'nodejs18.x'
 };
 
 const defaultSystemInstruction = `আপনি রাজবাড়ী জেলার একজন ভার্চুয়াল অ্যাসিস্ট্যান্ট। 
