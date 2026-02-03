@@ -54,8 +54,8 @@ export default async function handler(req, res) {
     return;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-  const model = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.VITE_API_KEY;
+  const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
   if (!apiKey) {
     res.status(500).json({ error: 'Server Configuration Error: GEMINI_API_KEY is missing.' });
@@ -96,6 +96,9 @@ export default async function handler(req, res) {
       groundingMetadata: response.candidates?.[0]?.groundingMetadata || null
     });
   } catch (error) {
-    res.status(500).json({ error: error?.message || 'Gemini API call failed.' });
+    res.status(500).json({
+      error: 'Gemini API call failed.',
+      details: error?.message || null
+    });
   }
 }
