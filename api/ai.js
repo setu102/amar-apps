@@ -1,8 +1,47 @@
 import { GoogleGenAI } from '@google/genai';
 
+export const config = {
+  runtime: 'nodejs'
+};
+
 const defaultSystemInstruction = `আপনি রাজবাড়ী জেলার একজন ভার্চুয়াল অ্যাসিস্ট্যান্ট। 
 রাজবাড়ী জেলার ট্রেন ট্র্যাকিং এবং স্থানীয় তথ্যের জন্য গুগল সার্চ ব্যবহার করুন। 
 সর্বদা বাংলায় উত্তর দিন। ডাটা প্রদানের সময় সঠিকতা বজায় রাখুন।`;
+
+const parseRequestBody = (req) => {
+  if (req?.body) {
+    if (typeof req.body === 'string') {
+      return JSON.parse(req.body);
+    }
+    if (Buffer.isBuffer(req.body)) {
+      return JSON.parse(req.body.toString('utf-8'));
+    }
+    return req.body;
+  }
+
+  if (typeof req?.on === 'function') {
+    return new Promise((resolve, reject) => {
+      let raw = '';
+      req.on('data', (chunk) => {
+        raw += chunk;
+      });
+      req.on('end', () => {
+        if (!raw) {
+          resolve({});
+          return;
+        }
+        try {
+          resolve(JSON.parse(raw));
+        } catch (error) {
+          reject(error);
+        }
+      });
+      req.on('error', reject);
+    });
+  }
+
+  return {};
+};
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -23,7 +62,14 @@ export default async function handler(req, res) {
     return;
   }
 
-  const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  let body = {};
+  try {
+    body = await parseRequestBody(req);
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid JSON payload.' });
+    return;
+  }
+
   const { contents, systemInstruction, tools, responseSchema, responseMimeType } = body || {};
 
   if (!contents || !Array.isArray(contents)) {
