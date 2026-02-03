@@ -2,11 +2,12 @@ export const config = {
   runtime: 'nodejs18.x'
 };
 
-const defaultSystemInstruction = `আপনি রাজবাড়ী জেলার একজন ভার্চুয়াল অ্যাসিস্ট্যান্ট। 
-রাজবাড়ী জেলার ট্রেন ট্র্যাকিং এবং স্থানীয় তথ্যের জন্য গুগল সার্চ ব্যবহার করুন। 
+const MODEL = 'gemini-1.5-flash';
+const DEFAULT_SYSTEM_INSTRUCTION = `আপনি রাজবাড়ী জেলার একজন ভার্চুয়াল অ্যাসিস্ট্যান্ট।
+রাজবাড়ী জেলার ট্রেন ট্র্যাকিং এবং স্থানীয় তথ্যের জন্য গুগল সার্চ ব্যবহার করুন।
 সর্বদা বাংলায় উত্তর দিন। ডাটা প্রদানের সময় সঠিকতা বজায় রাখুন।`;
 
-const parseRequestBody = (req) => {
+const parseBody = async (req) => {
   if (req?.body) {
     if (typeof req.body === 'string') {
       return JSON.parse(req.body);
@@ -128,18 +129,12 @@ export default async function handler(req, res) {
     return;
   }
 
-  console.info('[api/ai] request', {
-    method: req.method
-  });
-
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed.' });
     return;
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-
   if (!apiKey) {
     res.status(500).json({ error: 'Server Configuration Error: GEMINI_API_KEY is missing.' });
     return;
@@ -147,40 +142,31 @@ export default async function handler(req, res) {
 
   let body = {};
   try {
-    body = await parseRequestBody(req);
+    body = await parseBody(req);
   } catch (error) {
-    console.error('[api/ai] body_parse_error', { message: error?.message || 'unknown' });
     res.status(400).json({ error: 'Invalid JSON payload.' });
     return;
   }
 
-  console.info('[api/ai] body', body);
-
   const { contents, systemInstruction, tools, responseSchema, responseMimeType } = body || {};
   const normalizedContents = normalizeContents(contents);
-
-  console.info('[api/ai] contents_status', {
-    hasContents: Boolean(contents),
-    isArray: Array.isArray(contents)
-  });
 
   if (!normalizedContents) {
     res.status(400).json({ error: 'Invalid request: contents array is required.' });
     return;
   }
 
-  try {
-    console.info('[api/ai] gemini_request_start', { model });
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const payload = {
-      contents: normalizedContents,
-      systemInstruction: systemInstruction || defaultSystemInstruction,
-      tools: tools || [{ googleSearch: {} }],
-      responseSchema,
-      responseMimeType,
-      temperature: 0.1
-    };
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
+  const payload = {
+    contents: normalizedContents,
+    systemInstruction: systemInstruction || DEFAULT_SYSTEM_INSTRUCTION,
+    tools: tools || [{ googleSearch: {} }],
+    responseSchema,
+    responseMimeType,
+    temperature: 0.1
+  };
 
+  try {
     const geminiResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -204,11 +190,6 @@ export default async function handler(req, res) {
         responseText ||
         'Gemini API call failed.';
 
-      console.error('[api/ai] gemini_request_error', {
-        message: errorMessage,
-        status: geminiResponse.status
-      });
-
       res.status(geminiResponse.status).json({
         error: errorMessage,
         details: responseJson?.error || null
@@ -219,19 +200,13 @@ export default async function handler(req, res) {
     const firstCandidate = responseJson?.candidates?.[0];
     const text = firstCandidate?.content?.parts?.map((part) => part.text || '').join('') || '';
 
-    res.json({
+    res.status(200).json({
       text,
       groundingMetadata: firstCandidate?.groundingMetadata || null
     });
-    console.info('[api/ai] gemini_request_success');
   } catch (error) {
-    const errorMessage = error?.message || 'Gemini API call failed.';
-    console.error('[api/ai] gemini_request_error', {
-      message: errorMessage,
-      status: 500
-    });
     res.status(500).json({
-      error: errorMessage,
+      error: error?.message || 'Gemini API call failed.',
       details: null
     });
   }
