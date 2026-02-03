@@ -43,6 +43,63 @@ const parseRequestBody = (req) => {
   return {};
 };
 
+const normalizeText = (value) => {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return typeof value === 'string' ? value : String(value);
+};
+
+const normalizeParts = (parts) => {
+  if (!parts) {
+    return [];
+  }
+  if (Array.isArray(parts)) {
+    return parts
+      .map((part) => {
+        if (typeof part === 'string') {
+          return { text: part };
+        }
+        if (part && typeof part === 'object' && 'text' in part) {
+          return { text: normalizeText(part.text) };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof parts === 'string') {
+    return [{ text: parts }];
+  }
+
+  if (typeof parts === 'object' && 'text' in parts) {
+    return [{ text: normalizeText(parts.text) }];
+  }
+
+  return [];
+};
+
+const normalizeContentItem = (item) => {
+  if (typeof item === 'string') {
+    return { role: 'user', parts: [{ text: item }] };
+  }
+
+  if (!item || typeof item !== 'object') {
+    return null;
+  }
+
+  if (Array.isArray(item.parts) || item.parts) {
+    const parts = normalizeParts(item.parts);
+    return parts.length > 0 ? { role: item.role || 'user', parts } : null;
+  }
+
+  if ('text' in item) {
+    return { role: item.role || 'user', parts: [{ text: normalizeText(item.text) }] };
+  }
+
+  return null;
+};
+
 const normalizeContents = (contents) => {
   if (!contents) {
     return null;
@@ -53,11 +110,15 @@ const normalizeContents = (contents) => {
   }
 
   if (Array.isArray(contents)) {
-    return contents;
+    const normalized = contents
+      .map((item) => normalizeContentItem(item))
+      .filter(Boolean);
+    return normalized.length > 0 ? normalized : null;
   }
 
   if (typeof contents === 'object') {
-    return [contents];
+    const normalized = normalizeContentItem(contents);
+    return normalized ? [normalized] : null;
   }
 
   return null;
@@ -131,10 +192,22 @@ export default async function handler(req, res) {
     });
     console.info('[api/ai] gemini_request_success');
   } catch (error) {
-    console.error('[api/ai] gemini_request_error', { message: error?.message || 'unknown' });
-    res.status(500).json({
-      error: 'Gemini API call failed.',
-      details: error?.message || null
+    const errorMessage = error?.message || 'Gemini API call failed.';
+    const errorStatus = Number.isFinite(Number(error?.status))
+      ? Number(error?.status)
+      : Number.isFinite(Number(error?.code))
+        ? Number(error?.code)
+        : null;
+    const status = errorStatus && errorStatus >= 400 && errorStatus < 600 ? errorStatus : 500;
+
+    console.error('[api/ai] gemini_request_error', {
+      message: errorMessage,
+      status
+    });
+
+    res.status(status).json({
+      error: errorMessage,
+      details: error?.response?.data || null
     });
   }
 }
