@@ -20,30 +20,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // --- কনফিগারেশন ---
 // এখানে আপনার জেমিনি এপিআই কী-টি বসান। 
 // সিকিউরিটির জন্য এটি শুধুমাত্র আপনার হোস্টিং ফাইলে থাকবে।
-$apiKey = getenv('API_KEY') ?: "YOUR_ACTUAL_GEMINI_API_KEY_HERE"; 
-$modelName = "gemini-3-flash-preview";
+$apiKey = getenv('GEMINI_API_KEY') ?: getenv('API_KEY') ?: "YOUR_ACTUAL_GEMINI_API_KEY_HERE"; 
+$modelName = getenv('GEMINI_MODEL') ?: "gemini-3-flash-preview";
 // -----------------
 
 $inputJSON = file_get_contents('php://input');
 $input = json_decode($inputJSON, true);
 
 if (!$input) {
+    http_response_code(400);
     echo json_encode(['error' => ['message' => 'সার্ভারে কোনো ডাটা পৌঁছায়নি।']]);
+    exit;
+}
+
+if (empty($input['contents']) || !is_array($input['contents'])) {
+    http_response_code(400);
+    echo json_encode(['error' => ['message' => 'Invalid request: contents array is required.']]);
+    exit;
+}
+
+if ($apiKey === "YOUR_ACTUAL_GEMINI_API_KEY_HERE") {
+    http_response_code(500);
+    echo json_encode(['error' => ['message' => 'Server Configuration Error: GEMINI_API_KEY is missing.']]);
     exit;
 }
 
 $url = "https://generativelanguage.googleapis.com/v1beta/models/{$modelName}:generateContent?key=" . $apiKey;
 
 $payload = [
-    "contents" => $input['contents'] ?? [],
-    "tools" => [["googleSearch" => (object)[]]]
+    "contents" => $input['contents'],
+    "tools" => !empty($input['tools']) ? $input['tools'] : [["googleSearch" => (object)[]]]
 ];
 
-if (isset($input['system_instruction'])) {
+$systemInstruction = $input['systemInstruction'] ?? $input['system_instruction'] ?? null;
+if (!empty($systemInstruction)) {
     $payload['systemInstruction'] = [
         "role" => "system",
-        "parts" => [["text" => $input['system_instruction']]]
+        "parts" => [["text" => $systemInstruction]]
     ];
+}
+
+if (!empty($input['responseSchema'])) {
+    $payload['responseSchema'] = $input['responseSchema'];
+}
+
+if (!empty($input['responseMimeType'])) {
+    $payload['responseMimeType'] = $input['responseMimeType'];
 }
 
 $jsonData = json_encode($payload);
