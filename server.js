@@ -20,17 +20,23 @@ app.use(express.static(path.join(__dirname, 'dist')));
  */
 app.post('/api/ai', async (req, res) => {
     const { contents, systemInstruction, tools, responseSchema, responseMimeType } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const model = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
 
-    if (!process.env.API_KEY) {
-        return res.status(500).json({ error: "Server Configuration Error: API_KEY is missing." });
+    if (!apiKey) {
+        return res.status(500).json({ error: "Server Configuration Error: GEMINI_API_KEY is missing." });
+    }
+
+    if (!contents || !Array.isArray(contents)) {
+        return res.status(400).json({ error: "Invalid request: contents array is required." });
     }
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey });
         
-        // প্রডাকশন কোয়ালিটির জন্য gemini-3-pro-preview ব্যবহার করা হচ্ছে
+        // প্রডাকশন কোয়ালিটির জন্য ডিফল্ট মডেল ব্যবহার করা হচ্ছে
         const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-preview',
+            model,
             contents: contents,
             config: {
                 systemInstruction: systemInstruction || `আপনি রাজবাড়ী জেলার একজন ভার্চুয়াল অ্যাসিস্ট্যান্ট। 
