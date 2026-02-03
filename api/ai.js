@@ -1,5 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
-
 export const config = {
   runtime: 'nodejs'
 };
@@ -139,7 +137,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.VITE_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
   if (!apiKey) {
@@ -172,42 +170,69 @@ export default async function handler(req, res) {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
     console.info('[api/ai] gemini_request_start', { model });
-    const response = await ai.models.generateContent({
-      model,
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const payload = {
       contents: normalizedContents,
-      config: {
-        systemInstruction: systemInstruction || defaultSystemInstruction,
-        tools: tools || [{ googleSearch: {} }],
-        responseSchema,
-        responseMimeType,
-        temperature: 0.1
-      }
+      systemInstruction: systemInstruction || defaultSystemInstruction,
+      tools: tools || [{ googleSearch: {} }],
+      responseSchema,
+      responseMimeType,
+      temperature: 0.1
+    };
+
+    const geminiResponse = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
     });
 
+    const responseText = await geminiResponse.text();
+    let responseJson = null;
+    try {
+      responseJson = responseText ? JSON.parse(responseText) : null;
+    } catch (error) {
+      responseJson = null;
+    }
+
+    if (!geminiResponse.ok) {
+      const errorMessage =
+        responseJson?.error?.message ||
+        responseJson?.error?.status ||
+        responseText ||
+        'Gemini API call failed.';
+
+      console.error('[api/ai] gemini_request_error', {
+        message: errorMessage,
+        status: geminiResponse.status
+      });
+
+      res.status(geminiResponse.status).json({
+        error: errorMessage,
+        details: responseJson?.error || null
+      });
+      return;
+    }
+
+    const firstCandidate = responseJson?.candidates?.[0];
+    const text = firstCandidate?.content?.parts?.map((part) => part.text || '').join('') || '';
+
     res.json({
-      text: response.text || '',
-      groundingMetadata: response.candidates?.[0]?.groundingMetadata || null
+      text,
+      groundingMetadata: firstCandidate?.groundingMetadata || null
     });
     console.info('[api/ai] gemini_request_success');
   } catch (error) {
     const errorMessage = error?.message || 'Gemini API call failed.';
-    const errorStatus = Number.isFinite(Number(error?.status))
-      ? Number(error?.status)
-      : Number.isFinite(Number(error?.code))
-        ? Number(error?.code)
-        : null;
-    const status = errorStatus && errorStatus >= 400 && errorStatus < 600 ? errorStatus : 500;
-
     console.error('[api/ai] gemini_request_error', {
       message: errorMessage,
-      status
+      status: 500
     });
-
-    res.status(status).json({
+    res.status(500).json({
       error: errorMessage,
-      details: error?.response?.data || null
+      details: null
     });
   }
 }
